@@ -423,7 +423,11 @@
             const newOrder = { id, customer_name, wa, treatment_name, total, worker, qty, paymentStatus, estDate, notes, date };
 
             if(supabaseClient) {
-                await supabaseClient.from('orders').insert([newOrder]);
+                let { error } = await supabaseClient.from('orders').insert([newOrder]);
+                if(error) {
+                    alert('Gagal menyimpan ke Supabase: ' + error.message);
+                    return;
+                }
             } else {
                 let orders = await getOrdersFromDB();
                 orders.push(newOrder);
@@ -445,7 +449,11 @@
             if(!confirm(`Yakin ingin membatalkan/menghapus pesanan ${orderId}?`)) return;
 
             if(supabaseClient) {
-                await supabaseClient.from('orders').delete().eq('id', orderId);
+                let { error } = await supabaseClient.from('orders').delete().eq('id', orderId);
+                if(error) {
+                    alert('Gagal menghapus dari Supabase: ' + error.message);
+                    return;
+                }
             } else {
                 let orders = await getOrdersFromDB();
                 orders = orders.filter(o => o.id !== orderId);
@@ -460,14 +468,19 @@
             const name = document.getElementById('expName').value;
             const amount = parseFloat(document.getElementById('expAmount').value);
             const date = document.getElementById('filterDate').value;
+            const expId = 'EXP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+
+            const newExp = { id: expId, name, amount, date };
 
             if(supabaseClient) {
-                await supabaseClient.from('expenses').insert([{ name, amount, date }]);
+                let { error } = await supabaseClient.from('expenses').insert([newExp]);
+                if(error) {
+                    alert('Gagal mencatat pengeluaran ke Supabase: ' + error.message);
+                    return;
+                }
             } else {
                 let expenses = await getExpensesFromDB();
-                // Beri unique ID sederhana berbasis timestamp untuk keperluan hapus local
-                let id = 'EXP-' + Date.now();
-                expenses.push({ id, name, amount, date });
+                expenses.push(newExp);
                 localStorage.setItem('tl_expenses', JSON.stringify(expenses));
             }
             alert('Pengeluaran berhasil dicatat!');
@@ -480,8 +493,12 @@
             if(!confirm(`Yakin ingin menghapus pengeluaran "${expNameVal}"?`)) return;
 
             if(supabaseClient) {
-                // Jika pakai Supabase, hapus berdasarkan nama & jumlah atau jika ada ID kolomnya. Asumsi tabel punya id atau match name/date
-                await supabaseClient.from('expenses').delete().eq('id', expId);
+                // Coba hapus berdasarkan kolom id, jika tabel supabase belum ada kolom id, hapus berdasarkan nama dan tanggal
+                let { error } = await supabaseClient.from('expenses').delete().eq('id', expId);
+                if(error) {
+                    // Fallback jika id tidak ditemukan di supabase
+                    await supabaseClient.from('expenses').delete().eq('name', expNameVal);
+                }
             } else {
                 let expenses = await getExpensesFromDB();
                 expenses = expenses.filter(ex => ex.id !== expId);
@@ -542,12 +559,13 @@
             // Render Tabel Pengeluaran + Tombol Hapus
             let expTbody = document.getElementById('expenseTableBody');
             expTbody.innerHTML = '';
-            filteredExpenses.forEach((ex, index) => {
-                let expKey = ex.id || index; // fallback key
+            filteredExpenses.forEach((ex) => {
+                let safeId = ex.id || '';
+                let safeName = (ex.name || '').replace(/'/g, "\\'");
                 expTbody.innerHTML += `<tr>
                     <td>${ex.name}</td>
                     <td>Rp ${ex.amount.toLocaleString('id-ID')}</td>
-                    <td><button class="btn-danger" onclick="hapusPengeluaran('${expKey}', '${ex.name}')">Hapus</button></td>
+                    <td><button class="btn-danger" onclick="hapusPengeluaran('${safeId}', '${safeName}')">Hapus</button></td>
                 </tr>`;
             });
 
