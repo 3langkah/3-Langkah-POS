@@ -34,7 +34,7 @@
         .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
         .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
         .btn-full { background: var(--primary-yellow); color: var(--dark-text); border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px;}
-        .btn-danger { background: #ff4d4d; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        .btn-danger { background: #ff4d4d; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
         .btn-secondary { background: #4CAF50; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px;}
 
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
@@ -181,6 +181,22 @@
         </div>
 
         <div class="card">
+            <h3>Daftar Pengeluaran Tanggal Ini</h3>
+            <div style="overflow-x: auto;">
+                <table id="expenseTable">
+                    <thead>
+                        <tr>
+                            <th>Nama Pengeluaran</th>
+                            <th>Jumlah</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expenseTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
             <h3>Bagi Hasil Otomatis</h3>
             <div style="margin-top: 15px; line-height: 1.8;">
                 <p><strong>EKA (30%):</strong> Rp <span id="shareEka">0</span></p>
@@ -202,7 +218,7 @@
             <div id="workerSummary" style="margin-top: 10px; line-height: 1.6;"></div>
         </div>
         <div class="card">
-            <h3>Daftar Pesanan</h3>
+            <h3>Daftar Pesanan Tanggal Ini</h3>
             <div style="overflow-x: auto;">
                 <table id="orderTable">
                     <thead>
@@ -210,9 +226,10 @@
                             <th>ID</th>
                             <th>Pemesan</th>
                             <th>Treatment</th>
-                            <th>Pembayaran</th>
+                            <th>Status</th>
                             <th>Estimasi</th>
                             <th>Total</th>
+                            <th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="orderTableBody"></tbody>
@@ -283,7 +300,7 @@
             el.classList.add('active');
             if(tabId === 'pesanan') { generateId(); loadTreatments(); }
             if(tabId === 'treatment') loadTreatmentsTable();
-            if(tabId === 'beranda' || tabId === 'laporan') loadData();
+            if(tabId === 'beranda' || tabId === 'laporan' || tabId === 'keuangan') loadData();
         }
 
         const defaultPricelist = [
@@ -416,12 +433,25 @@
             alert('Pesanan berhasil disimpan!');
             let formattedWa = wa.startsWith('0') ? '62' + wa.substring(1) : wa;
             
-            // Format Pesan WhatsApp dengan Harga & Status Pembayaran
             const msg = `Halo kak *${customer_name}*,\n\nTerima kasih telah mempercayakan perawatan sepatumu di *Tiga Langkah Shoecare* 👟✨\n\nNo ID: ${id}\nTreatment: ${treatment_name} (x${qty})\nHarga: Rp ${total.toLocaleString('id-ID')}\nPembayaran: *${paymentStatus}*\nEstimasi Selesai: ${estDate}\n\nKami siap merawat sepatumu!`;
             
             window.open(`https://wa.me/${formattedWa}?text=${encodeURIComponent(msg)}`, '_blank');
             
             document.getElementById('orderForm').reset();
+            loadData();
+        }
+
+        async function hapusPesanan(orderId) {
+            if(!confirm(`Yakin ingin membatalkan/menghapus pesanan ${orderId}?`)) return;
+
+            if(supabaseClient) {
+                await supabaseClient.from('orders').delete().eq('id', orderId);
+            } else {
+                let orders = await getOrdersFromDB();
+                orders = orders.filter(o => o.id !== orderId);
+                localStorage.setItem('tl_orders', JSON.stringify(orders));
+            }
+            alert('Pesanan berhasil dibatalkan/dihapus.');
             loadData();
         }
 
@@ -435,12 +465,29 @@
                 await supabaseClient.from('expenses').insert([{ name, amount, date }]);
             } else {
                 let expenses = await getExpensesFromDB();
-                expenses.push({ name, amount, date });
+                // Beri unique ID sederhana berbasis timestamp untuk keperluan hapus local
+                let id = 'EXP-' + Date.now();
+                expenses.push({ id, name, amount, date });
                 localStorage.setItem('tl_expenses', JSON.stringify(expenses));
             }
             alert('Pengeluaran berhasil dicatat!');
             document.getElementById('expName').value = '';
             document.getElementById('expAmount').value = '';
+            loadData();
+        }
+
+        async function hapusPengeluaran(expId, expNameVal) {
+            if(!confirm(`Yakin ingin menghapus pengeluaran "${expNameVal}"?`)) return;
+
+            if(supabaseClient) {
+                // Jika pakai Supabase, hapus berdasarkan nama & jumlah atau jika ada ID kolomnya. Asumsi tabel punya id atau match name/date
+                await supabaseClient.from('expenses').delete().eq('id', expId);
+            } else {
+                let expenses = await getExpensesFromDB();
+                expenses = expenses.filter(ex => ex.id !== expId);
+                localStorage.setItem('tl_expenses', JSON.stringify(expenses));
+            }
+            alert('Pengeluaran berhasil dihapus.');
             loadData();
         }
 
@@ -471,16 +518,37 @@
             document.getElementById('shareWulan').innerText = (netProfit * 0.30).toLocaleString('id-ID');
             document.getElementById('shareDonation').innerText = (netProfit * 0.10).toLocaleString('id-ID');
 
+            // Render Tabel Pesanan + Tombol Hapus
             let tbody = document.getElementById('orderTableBody');
             tbody.innerHTML = '';
             let workerStats = { 'EKA': 0, 'WULAN': 0, 'FRANS': 0 };
 
             filteredOrders.forEach(o => {
                 let badgeColor = o.paymentStatus === 'Lunas' ? 'color: green; font-weight: bold;' : 'color: orange; font-weight: bold;';
-                tbody.innerHTML += `<tr><td>${o.id}</td><td>${o.customer_name}</td><td>${o.treatment_name}</td><td><span style="${badgeColor}">${o.paymentStatus || 'Lunas'}</span></td><td>${o.estDate || '-'}</td><td>Rp ${o.total.toLocaleString('id-ID')}</td></tr>`;
+                tbody.innerHTML += `<tr>
+                    <td>${o.id}</td>
+                    <td>${o.customer_name}</td>
+                    <td>${o.treatment_name}</td>
+                    <td><span style="${badgeColor}">${o.paymentStatus || 'Lunas'}</span></td>
+                    <td>${o.estDate || '-'}</td>
+                    <td>Rp ${o.total.toLocaleString('id-ID')}</td>
+                    <td><button class="btn-danger" onclick="hapusPesanan('${o.id}')">Hapus</button></td>
+                </tr>`;
                 if(workerStats[o.worker] !== undefined) {
                     workerStats[o.worker] += o.qty;
                 }
+            });
+
+            // Render Tabel Pengeluaran + Tombol Hapus
+            let expTbody = document.getElementById('expenseTableBody');
+            expTbody.innerHTML = '';
+            filteredExpenses.forEach((ex, index) => {
+                let expKey = ex.id || index; // fallback key
+                expTbody.innerHTML += `<tr>
+                    <td>${ex.name}</td>
+                    <td>Rp ${ex.amount.toLocaleString('id-ID')}</td>
+                    <td><button class="btn-danger" onclick="hapusPengeluaran('${expKey}', '${ex.name}')">Hapus</button></td>
+                </tr>`;
             });
 
             let summaryHtml = '';
