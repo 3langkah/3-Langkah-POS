@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiga Langkah Shoecare - Dashboard</title>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary-yellow: #FFD700;
+            --dark-text: #1A1A1A;
+            --light-bg: #FFFFFF;
+            --gray-bg: #F4F4F4;
+            --border-radius: 12px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: var(--gray-bg); color: var(--dark-text); padding-bottom: 80px; }
+        
+        .header { background: var(--primary-yellow); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 18px; }
+        .logout-btn { background: #1A1A1A; color: #FFF; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: bold;}
+        
+        .container { padding: 20px; display: none; animation: fadeIn 0.3s; }
+        .container.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .card { background: white; padding: 15px; border-radius: var(--border-radius); box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 15px;}
+        .card h4 { color: #666; font-size: 13px; margin-bottom: 5px; }
+        .card h2 { font-size: 20px; color: var(--dark-text); }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
+        .btn-full { background: var(--primary-yellow); color: var(--dark-text); border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px;}
+        .btn-danger { background: #ff4d4d; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        .btn-secondary { background: #4CAF50; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px;}
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        table, th, td { border: 1px solid #ddd; }
+        th, td { padding: 10px; text-align: left; }
+        th { background: #f9f9f9; }
+
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: white; display: flex; justify-content: space-around; padding: 12px 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
+        .nav-item { text-align: center; color: #666; cursor: pointer; flex: 1; font-size: 11px; font-weight: bold;}
+        .nav-item.active { color: #D4AF37; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 id="greeting">Halo, Pengguna</h1>
+        <button class="logout-btn" onclick="logout()">Keluar</button>
+    </div>
+
+    <!-- 1. BERANDA -->
+    <div id="beranda" class="container active">
+        <div class="card">
+            <h4 style="margin-bottom: 5px;">Pilih Tanggal Laporan</h4>
+            <input type="date" id="filterDate" onchange="loadData()" style="padding: 10px; width: 100%; border: 1px solid #ddd; border-radius: 8px;">
+        </div>
+
+        <h3 style="margin-bottom: 15px;">Ringkasan Tanggal Terpilih</h3>
+        <div class="stats-grid">
+            <div class="card">
+                <h4>Total Pesanan</h4>
+                <h2 id="statOrders">0 Pasang</h2>
+            </div>
+            <div class="card">
+                <h4>Pendapatan Kotor</h4>
+                <h2 id="statIncome">Rp 0</h2>
+            </div>
+            <div class="card">
+                <h4>Pengeluaran</h4>
+                <h2 id="statExpense">Rp 0</h2>
+            </div>
+            <div class="card">
+                <h4>Laba Bersih</h4>
+                <h2 id="statNetProfit" style="color: green;">Rp 0</h2>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. PESANAN -->
+    <div id="pesanan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Buat Pesanan Baru</h3>
+            <form id="orderForm" onsubmit="simpanPesanan(event)">
+                <div class="form-group">
+                    <label>ID Pesanan</label>
+                    <input type="text" id="orderId" readonly style="background: #eee;">
+                </div>
+                <div class="form-group">
+                    <label>Nama Pelanggan</label>
+                    <input type="text" id="custName" required placeholder="Nama pelanggan...">
+                </div>
+                <div class="form-group">
+                    <label>Nomor WhatsApp (Cth: 0812...)</label>
+                    <input type="number" id="custWa" required placeholder="Nomor WhatsApp...">
+                </div>
+                <div class="form-group">
+                    <label>Jenis Treatment & Harga</label>
+                    <select id="treatmentSelect" required onchange="cekHargaTreatment()">
+                        <option value="" disabled selected>-- Pilih Treatment --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Harga (Rp)</label>
+                    <input type="number" id="customPrice" required>
+                </div>
+                <div class="form-group">
+                    <label>Jumlah Sepasang</label>
+                    <input type="number" id="qty" value="1" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Pekerja</label>
+                    <select id="workerSelect" required>
+                        <option value="EKA">EKA</option>
+                        <option value="WULAN">WULAN</option>
+                        <option value="FRANS">FRANS</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Catatan</label>
+                    <textarea id="notes" rows="2" placeholder="Kondisi sepatu..."></textarea>
+                </div>
+                <button type="submit" class="btn-full">SIMPAN & KIRIM WHATSAPP</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. TREATMENT -->
+    <div id="treatment" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Tambah Treatment Baru</h3>
+            <form onsubmit="tambahTreatment(event)">
+                <div class="form-group">
+                    <label>Nama Treatment</label>
+                    <input type="text" id="newTreatName" required placeholder="Cth: Express Clean">
+                </div>
+                <div class="form-group">
+                    <label>Harga (Rp)</label>
+                    <input type="number" id="newTreatPrice" required placeholder="Cth: 30000">
+                </div>
+                <button type="submit" class="btn-full">SIMPAN TREATMENT</button>
+            </form>
+        </div>
+        <div class="card">
+            <h3>Daftar Treatment</h3>
+            <div id="treatmentListContainer"></div>
+        </div>
+    </div>
+
+    <!-- 4. KEUANGAN -->
+    <div id="keuangan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Catat Pengeluaran</h3>
+            <form onsubmit="tambahPengeluaran(event)">
+                <div class="form-group">
+                    <label>Nama Pengeluaran</label>
+                    <input type="text" id="expName" required placeholder="Cth: Beli Sabun">
+                </div>
+                <div class="form-group">
+                    <label>Jumlah (Rp)</label>
+                    <input type="number" id="expAmount" required placeholder="Cth: 20000">
+                </div>
+                <button type="submit" class="btn-full">SIMPAN PENGELUARAN</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Bagi Hasil Otomatis (Berdasarkan Filter Tanggal)</h3>
+            <div style="margin-top: 15px; line-height: 1.8;">
+                <p><strong>EKA (30%):</strong> Rp <span id="shareEka">0</span></p>
+                <p><strong>FRANS (30%):</strong> Rp <span id="shareFrans">0</span></p>
+                <p><strong>WULAN (30%):</strong> Rp <span id="shareWulan">0</span></p>
+                <p style="color: #d9534f;"><strong>DONASI (10%):</strong> Rp <span id="shareDonation">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. LAPORAN & EXCEL -->
+    <div id="laporan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Unduh Laporan Excel (.CSV)</h3>
+            <button class="btn-secondary" onclick="exportToExcel()">DOWNLOAD EXCEL</button>
+        </div>
+        <div class="card">
+            <h3>Rekap Upah Pekerja (Rp 10k/Sepatu)</h3>
+            <div id="workerSummary" style="margin-top: 10px; line-height: 1.6;"></div>
+        </div>
+        <div class="card">
+            <h3>Daftar Pesanan</h3>
+            <div style="overflow-x: auto;">
+                <table id="orderTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Pemesan</th>
+                            <th>Treatment</th>
+                            <th>Total</th>
+                            <th>Pekerja</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orderTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. PENGATURAN SUPABASE -->
+    <div id="pengaturan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Koneksi Database Supabase</h3>
+            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">Agar 3 HP (FRANS, EKA, WULAN) datanya sinkron real-time, masukkan URL & Anon Key Supabase Anda di sini:</p>
+            <div class="form-group">
+                <label>Supabase URL</label>
+                <input type="text" id="supaUrl" placeholder="https://xxx.supabase.co">
+            </div>
+            <div class="form-group">
+                <label>Supabase Anon Key</label>
+                <input type="password" id="supaKey" placeholder="eyJhbGci...">
+            </div>
+            <button class="btn-full" onclick="simpanSupabaseConfig()">SIMPAN KONEKSI</button>
+        </div>
+    </div>
+
+    <!-- Navigasi Bawah -->
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="switchTab('beranda', this)">Beranda</div>
+        <div class="nav-item" onclick="switchTab('pesanan', this)">Pesanan</div>
+        <div class="nav-item" onclick="switchTab('treatment', this)">Treatment</div>
+        <div class="nav-item" onclick="switchTab('keuangan', this)">Keuangan</div>
+        <div class="nav-item" onclick="switchTab('laporan', this)">Laporan</div>
+        <div class="nav-item" onclick="switchTab('pengaturan', this)">Setting</div>
+    </div>
+
+    <script>
+        const user = localStorage.getItem('penggunaAktif');
+        if (!user) { window.location.href = 'index.html'; }
+        else { document.getElementById('greeting').innerText = `Halo, ${user}`; }
+
+        function logout() {
+            localStorage.removeItem('penggunaAktif');
+            window.location.href = 'index.html';
+        }
+
+        // Set Default Tanggal Hari Ini pada Filter
+        const todayStr = new Date().toISOString().slice(0,10);
+        document.getElementById('filterDate').value = todayStr;
+
+        // Inisialisasi Supabase Client jika ada
+        let supabaseClient = null;
+        const savedUrl = localStorage.getItem('supabaseUrl');
+        const savedKey = localStorage.getItem('supabaseKey');
+        if(savedUrl && savedKey) {
+            supabaseClient = supabase.createClient(savedUrl, savedKey);
+        }
+        document.getElementById('supaUrl').value = savedUrl || '';
+        document.getElementById('supaKey').value = savedKey || '';
+
+        function simpanSupabaseConfig() {
+            const url = document.getElementById('supaUrl').value;
+            const key = document.getElementById('supaKey').value;
+            localStorage.setItem('supabaseUrl', url);
+            localStorage.setItem('supabaseKey', key);
+            alert("Koneksi berhasil disimpan! Muat ulang halaman.");
+            location.reload();
+        }
+
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.container').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            el.classList.add('active');
+            if(tabId === 'pesanan') { generateId(); loadTreatments(); }
+            if(tabId === 'treatment') loadTreatmentsTable();
+            if(tabId === 'beranda' || tabId === 'laporan') loadData();
+        }
+
+        // Data Utama (Supabase / Fallback LocalStorage)
+        async function getTreatmentsFromDB() {
+            if(supabaseClient) {
+                let { data } = await supabaseClient.from('treatments').select('*');
+                if(data && data.length > 0) return data;
+            }
+            return JSON.parse(localStorage.getItem('tl_treatments')) || [
+                { name: 'Fast Clean', price: 25000 },
+                { name: 'Deep Clean', price: 40000 },
+                { name: 'Premium Treatment', price: 60000 }
+            ];
+        }
+
+        async function getOrdersFromDB() {
+            if(supabaseClient) {
+                let { data } = await supabaseClient.from('orders').select('*');
+                if(data) return data;
+            }
+            return JSON.parse(localStorage.getItem('tl_orders')) || [];
+        }
+
+        async function getExpensesFromDB() {
+            if(supabaseClient) {
+                let { data } = await supabaseClient.from('expenses').select('*');
+                if(data) return data;
+            }
+            return JSON.parse(localStorage.getItem('tl_expenses')) || [];
+        }
+
+        async function generateId() {
+            let orders = await getOrdersFromDB();
+            const dateStr = todayStr.replace(/-/g,"");
+            const count = (orders.length + 1).toString().padStart(3, '0');
+            document.getElementById('orderId').value = `TLS-${dateStr}-${count}`;
+        }
+
+        async function loadTreatments() {
+            let treatments = await getTreatmentsFromDB();
+            const select = document.getElementById('treatmentSelect');
+            select.innerHTML = '<option value="" disabled selected>-- Pilih Treatment --</option>';
+            treatments.forEach((t, idx) => {
+                select.innerHTML += `<option value="${idx}" data-price="${t.price}" data-name="${t.name}">${t.name} (Rp ${t.price.toLocaleString('id-ID')})</option>`;
+            });
+        }
+
+        function cekHargaTreatment() {
+            const select = document.getElementById('treatmentSelect');
+            const selectedOpt = select.options[select.selectedIndex];
+            document.getElementById('customPrice').value = selectedOpt.getAttribute('data-price') || 0;
+        }
+
+        async function tambahTreatment(e) {
+            e.preventDefault();
+            const name = document.getElementById('newTreatName').value;
+            const price = parseFloat(document.getElementById('newTreatPrice').value);
+            
+            if(supabaseClient) {
+                await supabaseClient.from('treatments').insert([{ name, price }]);
+            } else {
+                let treatments = JSON.parse(localStorage.getItem('tl_treatments')) || [];
+                treatments.push({ name, price });
+                localStorage.setItem('tl_treatments', JSON.stringify(treatments));
+            }
+            alert('Treatment berhasil ditambahkan!');
+            document.getElementById('newTreatName').value = '';
+            document.getElementById('newTreatPrice').value = '';
+            loadTreatmentsTable();
+        }
+
+        async function loadTreatmentsTable() {
+            let treatments = await getTreatmentsFromDB();
+            let container = document.getElementById('treatmentListContainer');
+            let html = '<table><tr><th>Nama</th><th>Harga</th></tr>';
+            treatments.forEach(t => {
+                html += `<tr><td>${t.name}</td><td>Rp ${t.price.toLocaleString('id-ID')}</td></tr>`;
+            });
+            html += '</table>';
+            container.innerHTML = html;
+        }
+
+        async function simpanPesanan(e) {
+            e.preventDefault();
+            const id = document.getElementById('orderId').value;
+            const customer_name = document.getElementById('custName').value;
+            const wa = document.getElementById('custWa').value;
+            const select = document.getElementById('treatmentSelect');
+            const treatment_name = select.options[select.selectedIndex].getAttribute('data-name');
+            const price = parseFloat(document.getElementById('customPrice').value);
+            const qty = parseInt(document.getElementById('qty').value);
+            const worker = document.getElementById('workerSelect').value;
+            const notes = document.getElementById('notes').value;
+            const total = price * qty;
+            const date = document.getElementById('filterDate').value;
+
+            const newOrder = { id, customer_name, wa, treatment_name, total, worker, qty, notes, date };
+
+            if(supabaseClient) {
+                await supabaseClient.from('orders').insert([newOrder]);
+            } else {
+                let orders = await getOrdersFromDB();
+                orders.push(newOrder);
+                localStorage.setItem('tl_orders', JSON.stringify(orders));
+            }
+
+            alert('Pesanan berhasil disimpan & disinkronkan!');
+            let formattedWa = wa.startsWith('0') ? '62' + wa.substring(1) : wa;
+            const msg = `Halo kak ${customer_name},\n\nSepatu kamu terdaftar di Tiga Langkah Shoecare.\nID: ${id}\nTreatment: ${treatment_name} (x${qty})\nTotal: Rp ${total.toLocaleString('id-ID')}\n\nTerima kasih!`;
+            window.open(`https://wa.me/${formattedWa}?text=${encodeURIComponent(msg)}`, '_blank');
+            
+            document.getElementById('orderForm').reset();
+            loadData();
+        }
+
+        async function tambahPengeluaran(e) {
+            e.preventDefault();
+            const name = document.getElementById('expName').value;
+            const amount = parseFloat(document.getElementById('expAmount').value);
+            const date = document.getElementById('filterDate').value;
+
+            if(supabaseClient) {
+                await supabaseClient.from('expenses').insert([{ name, amount, date }]);
+            } else {
+                let expenses = await getExpensesFromDB();
+                expenses.push({ name, amount, date });
+                localStorage.setItem('tl_expenses', JSON.stringify(expenses));
+            }
+            alert('Pengeluaran berhasil dicatat!');
+            document.getElementById('expName').value = '';
+            document.getElementById('expAmount').value = '';
+            loadData();
+        }
+
+        // Load Data Berdasarkan Tanggal yang Dipilih
+        async function loadData() {
+            const selectedDate = document.getElementById('filterDate').value;
+            let orders = await getOrdersFromDB();
+            let expenses = await getExpensesFromDB();
+
+            // Filter berdasarkan tanggal
+            let filteredOrders = orders.filter(o => o.date === selectedDate || (!o.date && selectedDate === todayStr));
+            let filteredExpenses = expenses.filter(ex => ex.date === selectedDate || (!ex.date && selectedDate === todayStr));
+
+            let grossIncome = 0;
+            filteredOrders.forEach(o => grossIncome += o.total);
+
+            let totalExpense = 0;
+            filteredExpenses.forEach(ex => totalExpense += ex.amount);
+
+            let netProfit = grossIncome - totalExpense;
+            if(netProfit < 0) netProfit = 0;
+
+            document.getElementById('statOrders').innerText = `${filteredOrders.length} Pasang`;
+            document.getElementById('statIncome').innerText = `Rp ${grossIncome.toLocaleString('id-ID')}`;
+            document.getElementById('statExpense').innerText = `Rp ${totalExpense.toLocaleString('id-ID')}`;
+            document.getElementById('statNetProfit').innerText = `Rp ${netProfit.toLocaleString('id-ID')}`;
+
+            // Bagi hasil
+            document.getElementById('shareEka').innerText = (netProfit * 0.30).toLocaleString('id-ID');
+            document.getElementById('shareFrans').innerText = (netProfit * 0.30).toLocaleString('id-ID');
+            document.getElementById('shareWulan').innerText = (netProfit * 0.30).toLocaleString('id-ID');
+            document.getElementById('shareDonation').innerText = (netProfit * 0.10).toLocaleString('id-ID');
+
+            // Tabel & Rekap Pekerja
+            let tbody = document.getElementById('orderTableBody');
+            tbody.innerHTML = '';
+            let workerStats = { 'EKA': 0, 'WULAN': 0, 'FRANS': 0 };
+
+            filteredOrders.forEach(o => {
+                tbody.innerHTML += `<tr><td>${o.id}</td><td>${o.customer_name}</td><td>${o.treatment_name}</td><td>Rp ${o.total.toLocaleString('id-ID')}</td><td>${o.worker}</td></tr>`;
+                if(workerStats[o.worker] !== undefined) {
+                    workerStats[o.worker] += o.qty;
+                }
+            });
+
+            let summaryHtml = '';
+            for(let w in workerStats) {
+                let totalShoes = workerStats[w];
+                let wage = totalShoes * 10000;
+                summaryHtml += `<p><strong>${w}:</strong> ${totalShoes} sepatu | <strong>Upah (Rp10k):</strong> Rp ${wage.toLocaleString('id-ID')}</p>`;
+            }
+            document.getElementById('workerSummary').innerHTML = summaryHtml;
+        }
+
+        async function exportToExcel() {
+            let orders = await getOrdersFromDB();
+            let csv = 'ID Pesanan,Nama,WhatsApp,Treatment,Jumlah,Total,Pekerja,Tanggal\n';
+            orders.forEach(o => {
+                csv += `"${o.id}","${o.customer_name}","${o.wa}","${o.treatment_name}",${o.qty},${o.total},"${o.worker}","${o.date || '-'}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', 'Laporan_TigaLangkah.csv');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        loadData();
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiga Langkah Shoecare - Dashboard</title>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary-yellow: #FFD700;
+            --dark-text: #1A1A1A;
+            --light-bg: #FFFFFF;
+            --gray-bg: #F4F4F4;
+            --border-radius: 12px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: var(--gray-bg); color: var(--dark-text); padding-bottom: 80px; }
+        
+        .header { background: var(--primary-yellow); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 18px; }
+        .logout-btn { background: #1A1A1A; color: #FFF; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: bold;}
+        
+        .container { padding: 20px; display: none; animation: fadeIn 0.3s; }
+        .container.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .card { background: white; padding: 15px; border-radius: var(--border-radius); box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 15px;}
+        .card h4 { color: #666; font-size: 13px; margin-bottom: 5px; }
+        .card h2 { font-size: 20px; color: var(--dark-text); }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
+        .btn-full { background: var(--primary-yellow); color: var(--dark-text); border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px;}
+        .btn-danger { background: #ff4d4d; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        .btn-secondary { background: #4CAF50; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px;}
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        table, th, td { border: 1px solid #ddd; }
+        th, td { padding: 10px; text-align: left; }
+        th { background: #f9f9f9; }
+
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: white; display: flex; justify-content: space-around; padding: 12px 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
+        .nav-item { text-align: center; color: #666; cursor: pointer; flex: 1; font-size: 11px; font-weight: bold;}
+        .nav-item.active { color: #D4AF37; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 id="greeting">Halo, Pengguna</h1>
+        <button class="logout-btn" onclick="logout()">Keluar</button>
+    </div>
+
+    <!-- 1. BERANDA -->
+    <div id="beranda" class="container active">
+        <div class="card">
+            <h4 style="margin-bottom: 5px;">Pilih Tanggal Laporan</h4>
+            <input type="date" id="filterDate" onchange="loadData()" style="padding: 10px; width: 100%; border: 1px solid #ddd; border-radius: 8px;">
+        </div>
+
+        <h3 style="margin-bottom: 15px;">Ringkasan Tanggal Terpilih</h3>
+        <div class="stats-grid">
+            <div class="card">
+                <h4>Total Pesanan</h4>
+                <h2 id="statOrders">0 Pasang</h2>
+            </div>
+            <div class="card">
+                <h4>Pendapatan Kotor</h4>
+                <h2 id="statIncome">Rp 0</h2>
+            </div>
+            <div class="card">
+                <h4>Pengeluaran</h4>
+                <h2 id="statExpense">Rp 0</h2>
+            </div>
+            <div class="card">
+                <h4>Laba Bersih</h4>
+                <h2 id="statNetProfit" style="color: green;">Rp 0</h2>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. PESANAN -->
+    <div id="pesanan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Buat Pesanan Baru</h3>
+            <form id="orderForm" onsubmit="simpanPesanan(event)">
+                <div class="form-group">
+                    <label>ID Pesanan</label>
+                    <input type="text" id="orderId" readonly style="background: #eee;">
+                </div>
+                <div class="form-group">
+                    <label>Nama Pelanggan</label>
+                    <input type="text" id="custName" required placeholder="Nama pelanggan...">
+                </div>
+                <div class="form-group">
+                    <label>Nomor WhatsApp (Cth: 0812...)</label>
+                    <input type="number" id="custWa" required placeholder="Nomor WhatsApp...">
+                </div>
+                <div class="form-group">
+                    <label>Jenis Treatment & Harga</label>
+                    <select id="treatmentSelect" required onchange="cekHargaTreatment()">
+                        <option value="" disabled selected>-- Pilih Treatment --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Harga (Rp)</label>
+                    <input type="number" id="customPrice" required>
+                </div>
+                <div class="form-group">
+                    <label>Jumlah Sepasang</label>
+                    <input type="number" id="qty" value="1" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Pekerja</label>
+                    <select id="workerSelect" required>
+                        <option value="EKA">EKA</option>
+                        <option value="WULAN">WULAN</option>
+                        <option value="FRANS">FRANS</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Catatan</label>
+                    <textarea id="notes" rows="2" placeholder="Kondisi sepatu..."></textarea>
+                </div>
+                <button type="submit" class="btn-full">SIMPAN & KIRIM WHATSAPP</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. TREATMENT -->
+    <div id="treatment" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Tambah Treatment Baru</h3>
+            <form onsubmit="tambahTreatment(event)">
+                <div class="form-group">
+                    <label>Nama Treatment</label>
+                    <input type="text" id="newTreatName" required placeholder="Cth: Express Clean">
+                </div>
+                <div class="form-group">
+                    <label>Harga (Rp)</label>
+                    <input type="number" id="newTreatPrice" required placeholder="Cth: 30000">
+                </div>
+                <button type="submit" class="btn-full">SIMPAN TREATMENT</button>
+            </form>
+        </div>
+        <div class="card">
+            <h3>Daftar Treatment</h3>
+            <div id="treatmentListContainer"></div>
+        </div>
+    </div>
+
+    <!-- 4. KEUANGAN -->
+    <div id="keuangan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Catat Pengeluaran</h3>
+            <form onsubmit="tambahPengeluaran(event)">
+                <div class="form-group">
+                    <label>Nama Pengeluaran</label>
+                    <input type="text" id="expName" required placeholder="Cth: Beli Sabun">
+                </div>
+                <div class="form-group">
+                    <label>Jumlah (Rp)</label>
+                    <input type="number" id="expAmount" required placeholder="Cth: 20000">
+                </div>
+                <button type="submit" class="btn-full">SIMPAN PENGELUARAN</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Bagi Hasil Otomatis (Berdasarkan Filter Tanggal)</h3>
+            <div style="margin-top: 15px; line-height: 1.8;">
+                <p><strong>EKA (30%):</strong> Rp <span id="shareEka">0</span></p>
+                <p><strong>FRANS (30%):</strong> Rp <span id="shareFrans">0</span></p>
+                <p><strong>WULAN (30%):</strong> Rp <span id="shareWulan">0</span></p>
+                <p style="color: #d9534f;"><strong>DONASI (10%):</strong> Rp <span id="shareDonation">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. LAPORAN & EXCEL -->
+    <div id="laporan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Unduh Laporan Excel (.CSV)</h3>
+            <button class="btn-secondary" onclick="exportToExcel()">DOWNLOAD EXCEL</button>
+        </div>
+        <div class="card">
+            <h3>Rekap Upah Pekerja (Rp 10k/Sepatu)</h3>
+            <div id="workerSummary" style="margin-top: 10px; line-height: 1.6;"></div>
+        </div>
+        <div class="card">
+            <h3>Daftar Pesanan</h3>
+            <div style="overflow-x: auto;">
+                <table id="orderTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Pemesan</th>
+                            <th>Treatment</th>
+                            <th>Total</th>
+                            <th>Pekerja</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orderTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. PENGATURAN SUPABASE -->
+    <div id="pengaturan" class="container">
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Koneksi Database Supabase</h3>
+            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">Agar 3 HP (FRANS, EKA, WULAN) datanya sinkron real-time, masukkan URL & Anon Key Supabase Anda di sini:</p>
+            <div class="form-group">
+                <label>Supabase URL</label>
+                <input type="text" id="supaUrl" placeholder="https://xxx.supabase.co">
+            </div>
+            <div class="form-group">
+                <label>Supabase Anon Key</label>
+                <input type="password" id="supaKey" placeholder="eyJhbGci...">
+            </div>
+            <button class="btn-full" onclick="simpanSupabaseConfig()">SIMPAN KONEKSI</button>
+        </div>
+    </div>
+
+    <!-- Navigasi Bawah -->
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="switchTab('beranda', this)">Beranda</div>
+        <div class="nav-item" onclick="switchTab('pesanan', this)">Pesanan</div>
+        <div class="nav-item" onclick="switchTab('treatment', this)">Treatment</div>
+        <div class="nav-item" onclick="switchTab('keuangan', this)">Keuangan</div>
+        <div class="nav-item" onclick="switchTab('laporan', this)">Laporan</div>
+        <div class="nav-item" onclick="switchTab('pengaturan', this)">Setting</div>
+    </div>
+
+    <script>
+        const user = localStorage.getItem('penggunaAktif');
+        if (!user) { window.location.href = 'index.html'; }
+        else { document.getElementById('greeting').innerText = `Halo, ${user}`; }
+
+        function logout() {
+            localStorage.removeItem('penggunaAktif');
+            window.location.href = 'index.html';
+        }
+
+        // Set Default Tanggal Hari Ini pada Filter
+        const todayStr = new Date().toISOString().slice(0,10);
+        document.getElementById('filterDate').value = todayStr;
+
+        // Inisialisasi Supabase Client jika ada
+        let supabaseClient = null;
+        const savedUrl = localStorage.getItem('supabaseUrl');
+        const savedKey = localStorage.getItem('supabaseKey');
+        if(savedUrl && savedKey) {
+            supabaseClient = supabase.createClient(savedUrl, savedKey);
+        }
+        document.getElementById('supaUrl').value = savedUrl || '';
+        document.getElementById('supaKey').value = savedKey || '';
+
+        function simpanSupabaseConfig() {
+            const url = document.getElementById('supaUrl').value;
+            const key = document.getElementById('supaKey').value;
+            localStorage.setItem('supabaseUrl', url);
+            localStorage.setItem('supabaseKey', key);
+            alert("Koneksi berhasil disimpan! Muat ulang halaman.");
+            location.reload();
+        }
+
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.container').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            el.classList.add('active');
+            if(tabId === 'pesanan') { generateId(); loadTreatments(); }
+            if(tabId === 'treatment') loadTreatmentsTable();
+            if(tabId === 'beranda' || tabId === 'laporan') loadData();
+        }
+
+        // Data Utama (Supabase / Fallback LocalStorage)
+        async function getTreatmentsFromDB() {
+            if(supabaseClient) {
+                let { data } = await supabaseClient.from('treatments').select('*');
+                if(data && data.length > 0) return data;
+            }
+            return JSON.parse(localStorage.getItem('tl_treatments')) || [
+                { name: 'Fast Clean', price: 25000 },
+                { name: 'Deep Clean', price: 40000 },
+                { name: 'Premium Treatment', price: 60000 }
+            ];
+        }
+
+        async function getOrdersFromDB() {
+            if(supabaseClient) {
+                let { data } = await supabaseClient.from('orders').select('*');
+                if(data) return data;
+            }
+            return JSON.parse(localStorage.getItem('tl_orders')) || [];
+        }
+
+        async function getExpensesFromDB() {
+            if(supabaseClient) {
+                let { data } = await supabaseClient.from('expenses').select('*');
+                if(data) return data;
+            }
+            return JSON.parse(localStorage.getItem('tl_expenses')) || [];
+        }
+
+        async function generateId() {
+            let orders = await getOrdersFromDB();
+            const dateStr = todayStr.replace(/-/g,"");
+            const count = (orders.length + 1).toString().padStart(3, '0');
+            document.getElementById('orderId').value = `TLS-${dateStr}-${count}`;
+        }
+
+        async function loadTreatments() {
+            let treatments = await getTreatmentsFromDB();
+            const select = document.getElementById('treatmentSelect');
+            select.innerHTML = '<option value="" disabled selected>-- Pilih Treatment --</option>';
+            treatments.forEach((t, idx) => {
+                select.innerHTML += `<option value="${idx}" data-price="${t.price}" data-name="${t.name}">${t.name} (Rp ${t.price.toLocaleString('id-ID')})</option>`;
+            });
+        }
+
+        function cekHargaTreatment() {
+            const select = document.getElementById('treatmentSelect');
+            const selectedOpt = select.options[select.selectedIndex];
+            document.getElementById('customPrice').value = selectedOpt.getAttribute('data-price') || 0;
+        }
+
+        async function tambahTreatment(e) {
+            e.preventDefault();
+            const name = document.getElementById('newTreatName').value;
+            const price = parseFloat(document.getElementById('newTreatPrice').value);
+            
+            if(supabaseClient) {
+                await supabaseClient.from('treatments').insert([{ name, price }]);
+            } else {
+                let treatments = JSON.parse(localStorage.getItem('tl_treatments')) || [];
+                treatments.push({ name, price });
+                localStorage.setItem('tl_treatments', JSON.stringify(treatments));
+            }
+            alert('Treatment berhasil ditambahkan!');
+            document.getElementById('newTreatName').value = '';
+            document.getElementById('newTreatPrice').value = '';
+            loadTreatmentsTable();
+        }
+
+        async function loadTreatmentsTable() {
+            let treatments = await getTreatmentsFromDB();
+            let container = document.getElementById('treatmentListContainer');
+            let html = '<table><tr><th>Nama</th><th>Harga</th></tr>';
+            treatments.forEach(t => {
+                html += `<tr><td>${t.name}</td><td>Rp ${t.price.toLocaleString('id-ID')}</td></tr>`;
+            });
+            html += '</table>';
+            container.innerHTML = html;
+        }
+
+        async function simpanPesanan(e) {
+            e.preventDefault();
+            const id = document.getElementById('orderId').value;
+            const customer_name = document.getElementById('custName').value;
+            const wa = document.getElementById('custWa').value;
+            const select = document.getElementById('treatmentSelect');
+            const treatment_name = select.options[select.selectedIndex].getAttribute('data-name');
+            const price = parseFloat(document.getElementById('customPrice').value);
+            const qty = parseInt(document.getElementById('qty').value);
+            const worker = document.getElementById('workerSelect').value;
+            const notes = document.getElementById('notes').value;
+            const total = price * qty;
+            const date = document.getElementById('filterDate').value;
+
+            const newOrder = { id, customer_name, wa, treatment_name, total, worker, qty, notes, date };
+
+            if(supabaseClient) {
+                await supabaseClient.from('orders').insert([newOrder]);
+            } else {
+                let orders = await getOrdersFromDB();
+                orders.push(newOrder);
+                localStorage.setItem('tl_orders', JSON.stringify(orders));
+            }
+
+            alert('Pesanan berhasil disimpan & disinkronkan!');
+            let formattedWa = wa.startsWith('0') ? '62' + wa.substring(1) : wa;
+            const msg = `Halo kak ${customer_name},\n\nSepatu kamu terdaftar di Tiga Langkah Shoecare.\nID: ${id}\nTreatment: ${treatment_name} (x${qty})\nTotal: Rp ${total.toLocaleString('id-ID')}\n\nTerima kasih!`;
+            window.open(`https://wa.me/${formattedWa}?text=${encodeURIComponent(msg)}`, '_blank');
+            
+            document.getElementById('orderForm').reset();
+            loadData();
+        }
+
+        async function tambahPengeluaran(e) {
+            e.preventDefault();
+            const name = document.getElementById('expName').value;
+            const amount = parseFloat(document.getElementById('expAmount').value);
+            const date = document.getElementById('filterDate').value;
+
+            if(supabaseClient) {
+                await supabaseClient.from('expenses').insert([{ name, amount, date }]);
+            } else {
+                let expenses = await getExpensesFromDB();
+                expenses.push({ name, amount, date });
+                localStorage.setItem('tl_expenses', JSON.stringify(expenses));
+            }
+            alert('Pengeluaran berhasil dicatat!');
+            document.getElementById('expName').value = '';
+            document.getElementById('expAmount').value = '';
+            loadData();
+        }
+
+        // Load Data Berdasarkan Tanggal yang Dipilih
+        async function loadData() {
+            const selectedDate = document.getElementById('filterDate').value;
+            let orders = await getOrdersFromDB();
+            let expenses = await getExpensesFromDB();
+
+            // Filter berdasarkan tanggal
+            let filteredOrders = orders.filter(o => o.date === selectedDate || (!o.date && selectedDate === todayStr));
+            let filteredExpenses = expenses.filter(ex => ex.date === selectedDate || (!ex.date && selectedDate === todayStr));
+
+            let grossIncome = 0;
+            filteredOrders.forEach(o => grossIncome += o.total);
+
+            let totalExpense = 0;
+            filteredExpenses.forEach(ex => totalExpense += ex.amount);
+
+            let netProfit = grossIncome - totalExpense;
+            if(netProfit < 0) netProfit = 0;
+
+            document.getElementById('statOrders').innerText = `${filteredOrders.length} Pasang`;
+            document.getElementById('statIncome').innerText = `Rp ${grossIncome.toLocaleString('id-ID')}`;
+            document.getElementById('statExpense').innerText = `Rp ${totalExpense.toLocaleString('id-ID')}`;
+            document.getElementById('statNetProfit').innerText = `Rp ${netProfit.toLocaleString('id-ID')}`;
+
+            // Bagi hasil
+            document.getElementById('shareEka').innerText = (netProfit * 0.30).toLocaleString('id-ID');
+            document.getElementById('shareFrans').innerText = (netProfit * 0.30).toLocaleString('id-ID');
+            document.getElementById('shareWulan').innerText = (netProfit * 0.30).toLocaleString('id-ID');
+            document.getElementById('shareDonation').innerText = (netProfit * 0.10).toLocaleString('id-ID');
+
+            // Tabel & Rekap Pekerja
+            let tbody = document.getElementById('orderTableBody');
+            tbody.innerHTML = '';
+            let workerStats = { 'EKA': 0, 'WULAN': 0, 'FRANS': 0 };
+
+            filteredOrders.forEach(o => {
+                tbody.innerHTML += `<tr><td>${o.id}</td><td>${o.customer_name}</td><td>${o.treatment_name}</td><td>Rp ${o.total.toLocaleString('id-ID')}</td><td>${o.worker}</td></tr>`;
+                if(workerStats[o.worker] !== undefined) {
+                    workerStats[o.worker] += o.qty;
+                }
+            });
+
+            let summaryHtml = '';
+            for(let w in workerStats) {
+                let totalShoes = workerStats[w];
+                let wage = totalShoes * 10000;
+                summaryHtml += `<p><strong>${w}:</strong> ${totalShoes} sepatu | <strong>Upah (Rp10k):</strong> Rp ${wage.toLocaleString('id-ID')}</p>`;
+            }
+            document.getElementById('workerSummary').innerHTML = summaryHtml;
+        }
+
+        async function exportToExcel() {
+            let orders = await getOrdersFromDB();
+            let csv = 'ID Pesanan,Nama,WhatsApp,Treatment,Jumlah,Total,Pekerja,Tanggal\n';
+            orders.forEach(o => {
+                csv += `"${o.id}","${o.customer_name}","${o.wa}","${o.treatment_name}",${o.qty},${o.total},"${o.worker}","${o.date || '-'}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', 'Laporan_TigaLangkah.csv');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        loadData();
+    </script>
+</body>
+    </html>
