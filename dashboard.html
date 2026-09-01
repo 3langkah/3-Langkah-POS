@@ -36,6 +36,10 @@
         .btn-full { background: var(--primary-yellow); color: var(--dark-text); border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px;}
         .btn-danger { background: #ff4d4d; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
         .btn-secondary { background: #4CAF50; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px;}
+        .btn-add-item { background: #008CBA; color: white; border: none; padding: 10px; width: 100%; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin-bottom: 15px; }
+
+        .treatment-item-box { background: #fafafa; border: 1px solid #e0e0e0; padding: 12px; border-radius: 8px; margin-bottom: 10px; position: relative; }
+        .btn-remove-item { background: #ff4d4d; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; float: right; margin-bottom: 5px; }
 
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
         table, th, td { border: 1px solid #ddd; }
@@ -99,20 +103,15 @@
                     <label>Nomor WhatsApp (Cth: 0812...)</label>
                     <input type="number" id="custWa" required placeholder="Nomor WhatsApp...">
                 </div>
-                <div class="form-group">
-                    <label>Pilih Treatment Sesuai Pricelist</label>
-                    <select id="treatmentSelect" required onchange="pilihTreatmentPricelist()">
-                        <option value="" disabled selected>-- Pilih Treatment --</option>
-                    </select>
+
+                <hr style="border: 0; border-top: 1px solid #ddd; margin: 15px 0;">
+                <label style="font-weight: bold; margin-bottom: 10px; display: block;">Daftar Treatment / Sepatu</label>
+                <div id="treatmentListWrapper">
+                    <!-- Baris treatment dinamis akan masuk sini -->
                 </div>
-                <div class="form-group">
-                    <label>Harga (Rp)</label>
-                    <input type="number" id="customPrice" required>
-                </div>
-                <div class="form-group">
-                    <label>Jumlah Sepasang</label>
-                    <input type="number" id="qty" value="1" min="1" required>
-                </div>
+                <button type="button" class="btn-add-item" onclick="tambahBarisTreatment()">+ Tambah Pasang/Treatment Lain</button>
+                <hr style="border: 0; border-top: 1px solid #ddd; margin: 15px 0;">
+
                 <div class="form-group">
                     <label>Status Pembayaran</label>
                     <select id="paymentStatus" required>
@@ -121,7 +120,7 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Estimasi Tanggal Selesai</label>
+                    <label>Estimasi Tanggal Selesai Terlama</label>
                     <input type="date" id="estDate" required>
                 </div>
                 <div class="form-group">
@@ -133,8 +132,8 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Catatan</label>
-                    <textarea id="notes" rows="2" placeholder="Kondisi sepatu..."></textarea>
+                    <label>Catatan / Kondisi Sepatu</label>
+                    <textarea id="notes" rows="2" placeholder="Cth: Sole menguning, ada noda cat..."></textarea>
                 </div>
                 <button type="submit" class="btn-full">SIMPAN & KIRIM WHATSAPP</button>
             </form>
@@ -298,7 +297,7 @@
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             el.classList.add('active');
-            if(tabId === 'pesanan') { generateId(); loadTreatments(); }
+            if(tabId === 'pesanan') { generateId(); initFormPesanan(); }
             if(tabId === 'treatment') loadTreatmentsTable();
             if(tabId === 'beranda' || tabId === 'laporan' || tabId === 'keuangan') loadData();
         }
@@ -352,25 +351,71 @@
             document.getElementById('orderId').value = `TLS-${dateStr}-${count}`;
         }
 
-        async function loadTreatments() {
-            let treatments = await getTreatmentsFromDB();
-            const select = document.getElementById('treatmentSelect');
-            select.innerHTML = '<option value="" disabled selected>-- Pilih Treatment --</option>';
-            treatments.forEach((t, idx) => {
-                select.innerHTML += `<option value="${idx}" data-price="${t.price}" data-name="${t.name}" data-days="${t.days || 2}">${t.name} (Rp ${t.price.toLocaleString('id-ID')})</option>`;
-            });
+        async function initFormPesanan() {
+            document.getElementById('treatmentListWrapper').innerHTML = '';
+            await tambahBarisTreatment();
         }
 
-        function pilihTreatmentPricelist() {
-            const select = document.getElementById('treatmentSelect');
-            const selectedOpt = select.options[select.selectedIndex];
-            const price = selectedOpt.getAttribute('data-price') || 0;
-            const days = parseInt(selectedOpt.getAttribute('data-days') || 2);
+        async function tambahBarisTreatment() {
+            let treatments = await getTreatmentsFromDB();
+            let wrapper = document.getElementById('treatmentListWrapper');
+            let index = wrapper.children.length;
 
-            document.getElementById('customPrice').value = price;
+            let optionsHtml = '<option value="" disabled selected>-- Pilih Treatment --</option>';
+            treatments.forEach((t) => {
+                optionsHtml += `<option value="${t.name}" data-price="${t.price}" data-days="${t.days || 2}">${t.name} (Rp ${t.price.toLocaleString('id-ID')})</option>`;
+            });
+
+            let div = document.createElement('div');
+            div.className = 'treatment-item-box';
+            div.innerHTML = `
+                ${index > 0 ? '<button type="button" class="btn-remove-item" onclick="this.parentElement.remove(); hitungEstimasiDanTotal();">Hapus</button>' : ''}
+                <div class="form-group" style="margin-bottom: 8px;">
+                    <label>Pilih Treatment</label>
+                    <select class="item-treatment" required onchange="updateHargaDanEstimasi(this)">
+                        ${optionsHtml}
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                        <label>Harga (Rp)</label>
+                        <input type="number" class="item-price" required oninput="hitungEstimasiDanTotal()">
+                    </div>
+                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                        <label>Jumlah Pasang</label>
+                        <input type="number" class="item-qty" value="1" min="1" required oninput="hitungEstimasiDanTotal()">
+                    </div>
+                </div>
+            `;
+            wrapper.appendChild(div);
+        }
+
+        function updateHargaDanEstimasi(selectEl) {
+            let box = selectEl.closest('.treatment-item-box');
+            let selectedOpt = selectEl.options[selectEl.selectedIndex];
+            let price = selectedOpt.getAttribute('data-price') || 0;
+            let days = parseInt(selectedOpt.getAttribute('data-days') || 2);
+
+            box.querySelector('.item-price').value = price;
+            box.setAttribute('data-days', days);
+
+            hitungEstimasiDanTotal();
+        }
+
+        function hitungEstimasiDanTotal() {
+            let boxes = document.querySelectorAll('.treatment-item-box');
+            let maxDays = 2;
+
+            boxes.forEach(box => {
+                let select = box.querySelector('.item-treatment');
+                if(select.selectedIndex > 0) {
+                    let days = parseInt(box.getAttribute('data-days') || 2);
+                    if(days > maxDays) maxDays = days;
+                }
+            });
 
             let est = new Date();
-            est.setDate(est.getDate() + days);
+            est.setDate(est.getDate() + maxDays);
             document.getElementById('estDate').value = est.toISOString().slice(0,10);
         }
 
@@ -409,18 +454,44 @@
             const id = document.getElementById('orderId').value;
             const customer_name = document.getElementById('custName').value;
             const wa = document.getElementById('custWa').value;
-            const select = document.getElementById('treatmentSelect');
-            const treatment_name = select.options[select.selectedIndex].getAttribute('data-name');
-            const price = parseFloat(document.getElementById('customPrice').value);
-            const qty = parseInt(document.getElementById('qty').value);
             const paymentStatus = document.getElementById('paymentStatus').value;
             const estDate = document.getElementById('estDate').value;
             const worker = document.getElementById('workerSelect').value;
             const notes = document.getElementById('notes').value;
-            const total = price * qty;
             const date = document.getElementById('filterDate').value;
 
-            const newOrder = { id, customer_name, wa, treatment_name, total, worker, qty, paymentStatus, estDate, notes, date };
+            let boxes = document.querySelectorAll('.treatment-item-box');
+            let itemsSummary = [];
+            let totalOrder = 0;
+            let totalQty = 0;
+
+            boxes.forEach(box => {
+                let select = box.querySelector('.item-treatment');
+                let treatmentName = select.value;
+                let price = parseFloat(box.querySelector('.item-price').value) || 0;
+                let qty = parseInt(box.querySelector('.item-qty').value) || 1;
+                let subtotal = price * qty;
+
+                totalOrder += subtotal;
+                totalQty += qty;
+                itemsSummary.push(`${treatmentName} (x${qty}) - Rp ${subtotal.toLocaleString('id-ID')}`);
+            });
+
+            const treatment_name_str = itemsSummary.join(', ');
+
+            const newOrder = { 
+                id, 
+                customer_name, 
+                wa, 
+                treatment_name: treatment_name_str, 
+                total: totalOrder, 
+                worker, 
+                qty: totalQty, 
+                paymentStatus, 
+                estDate, 
+                notes, 
+                date 
+            };
 
             if(supabaseClient) {
                 let { error } = await supabaseClient.from('orders').insert([newOrder]);
@@ -437,11 +508,13 @@
             alert('Pesanan berhasil disimpan!');
             let formattedWa = wa.startsWith('0') ? '62' + wa.substring(1) : wa;
             
-            const msg = `Halo kak *${customer_name}*,\n\nTerima kasih telah mempercayakan perawatan sepatumu di *Tiga Langkah Shoecare* 👟✨\n\nNo ID: ${id}\nTreatment: ${treatment_name} (x${qty})\nHarga: Rp ${total.toLocaleString('id-ID')}\nPembayaran: *${paymentStatus}*\nEstimasi Selesai: ${estDate}\n\nKami siap merawat sepatumu!`;
+            let listDetailWa = itemsSummary.map(i => `- ${i}`).join('\n');
+            const msg = `Halo kak *${customer_name}*,\n\nTerima kasih telah mempercayakan perawatan sepatumu di *Tiga Langkah Shoecare* 👟✨\n\nNo ID: ${id}\n\n*Detail Treatment:*\n${listDetailWa}\n\n*Catatan / Kondisi Sepatu:*\n${notes ? notes : '-'}\n\n*Total Harga: Rp ${totalOrder.toLocaleString('id-ID')}*\nPembayaran: *${paymentStatus}*\nEstimasi Selesai: ${estDate}\n\nKami siap merawat sepatumu!`;
             
             window.open(`https://wa.me/${formattedWa}?text=${encodeURIComponent(msg)}`, '_blank');
             
             document.getElementById('orderForm').reset();
+            initFormPesanan();
             loadData();
         }
 
@@ -493,10 +566,8 @@
             if(!confirm(`Yakin ingin menghapus pengeluaran "${expNameVal}"?`)) return;
 
             if(supabaseClient) {
-                // Coba hapus berdasarkan kolom id, jika tabel supabase belum ada kolom id, hapus berdasarkan nama dan tanggal
                 let { error } = await supabaseClient.from('expenses').delete().eq('id', expId);
                 if(error) {
-                    // Fallback jika id tidak ditemukan di supabase
                     await supabaseClient.from('expenses').delete().eq('name', expNameVal);
                 }
             } else {
@@ -525,7 +596,7 @@
             let netProfit = grossIncome - totalExpense;
             if(netProfit < 0) netProfit = 0;
 
-            document.getElementById('statOrders').innerText = `${filteredOrders.length} Pasang`;
+            document.getElementById('statOrders').innerText = `${filteredOrders.length} Pesanan`;
             document.getElementById('statIncome').innerText = `Rp ${grossIncome.toLocaleString('id-ID')}`;
             document.getElementById('statExpense').innerText = `Rp ${totalExpense.toLocaleString('id-ID')}`;
             document.getElementById('statNetProfit').innerText = `Rp ${netProfit.toLocaleString('id-ID')}`;
@@ -535,7 +606,6 @@
             document.getElementById('shareWulan').innerText = (netProfit * 0.30).toLocaleString('id-ID');
             document.getElementById('shareDonation').innerText = (netProfit * 0.10).toLocaleString('id-ID');
 
-            // Render Tabel Pesanan + Tombol Hapus
             let tbody = document.getElementById('orderTableBody');
             tbody.innerHTML = '';
             let workerStats = { 'EKA': 0, 'WULAN': 0, 'FRANS': 0 };
@@ -556,7 +626,6 @@
                 }
             });
 
-            // Render Tabel Pengeluaran + Tombol Hapus
             let expTbody = document.getElementById('expenseTableBody');
             expTbody.innerHTML = '';
             filteredExpenses.forEach((ex) => {
